@@ -1,0 +1,113 @@
+#include <stdio.h>
+#include "string.h"
+#include "driver/gpio.h"
+#include "driver/uart.h"
+#include "esp_log.h"
+#include "sdkconfig.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "esp_system.h"
+#include "driver/gpio.h"
+#include "esp_spi_flash.h"
+#include "freertos/queue.h"
+ 
+ 
+#define GPIO_LED  GPIO_NUM_2
+
+static const int RX_BUF_SIZE = 1024;
+
+#define TXD_PIN (GPIO_NUM_4)
+#define RXD_PIN (GPIO_NUM_5)
+
+void init(void) {
+    const uart_config_t uart_config = {
+        .baud_rate = 115200,//波特率
+        .data_bits = UART_DATA_8_BITS,//数据位
+        .parity = UART_PARITY_DISABLE,
+        .stop_bits = UART_STOP_BITS_1,//停止位
+        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+        .source_clk = UART_SCLK_DEFAULT,
+    };
+    // We won't use a buffer for sending data.
+    uart_driver_install(UART_NUM_1, RX_BUF_SIZE * 2, 0, 0, NULL, 0);
+    uart_param_config(UART_NUM_1, &uart_config);
+    uart_set_pin(UART_NUM_1, TXD_PIN, RXD_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
+}
+
+int sendData(const char* logName, const char* data)
+{
+    const int len = strlen(data);
+    const int txBytes = uart_write_bytes(UART_NUM_1, data, len);
+    ESP_LOGI(logName, "Wrote %d bytes", txBytes);
+    return txBytes;
+}
+
+static void tx_task(void *arg)
+{
+    static const char *TX_TASK_TAG = "TX_TASK";
+    esp_log_level_set(TX_TASK_TAG, ESP_LOG_INFO);
+    while (1) {
+        sendData(TX_TASK_TAG, "你好世界");
+        vTaskDelay(2000 / portTICK_PERIOD_MS);
+    }
+}
+
+static void rx_task(void *arg)
+{
+    static const char *RX_TASK_TAG = "RX_TASK";
+    static int led_flag = 0;
+    esp_log_level_set(RX_TASK_TAG, ESP_LOG_INFO);
+    uint8_t* data = (uint8_t*) malloc(RX_BUF_SIZE+1);
+    while (1) {
+        const int rxBytes = uart_read_bytes(UART_NUM_1, data, RX_BUF_SIZE, 1000 / portTICK_PERIOD_MS);
+        if (rxBytes > 0) {
+            data[rxBytes] = 0;
+            if(data[0]=='o'&&data[1]=='p'&&data[2]=='e'&&data[3]=='n')
+            {
+                led_flag=1;
+            }
+            if(data[0]=='c'&&data[1]=='l'&&data[2]=='o'&&data[3]=='s'&&data[4]=='e')
+            {
+                led_flag=0;
+            }
+            if (led_flag==1)
+            {
+                gpio_set_level(GPIO_LED,1);
+            }
+            if (led_flag==0)
+            {
+                gpio_set_level(GPIO_LED,0);
+            }          
+            ESP_LOGI(RX_TASK_TAG, "Read %d bytes: '%s'", rxBytes, data);
+            printf("%d\n",(int)data);
+            ESP_LOG_BUFFER_HEXDUMP(RX_TASK_TAG, data, rxBytes, ESP_LOG_INFO);
+        }
+    }
+    free(data);
+} 
+//led初始化
+void LED_GPIO_Init(void)
+{
+    esp_rom_gpio_pad_select_gpio(GPIO_LED);                 // 选择GPIO口
+    gpio_set_direction(GPIO_LED, GPIO_MODE_OUTPUT); // GPIO作为输出
+    gpio_set_level(GPIO_LED, 0);                    // 默认低电平
+}
+ 
+//主函数
+int app_main()
+{
+    LED_GPIO_Init();
+    // init();
+    // xTaskCreate(rx_task, "uart_rx_task", 1024*2, NULL, configMAX_PRIORITIES, NULL);
+    // xTaskCreate(tx_task, "uart_tx_task", 1024*2, NULL, configMAX_PRIORITIES-1, NULL);
+    while(1)
+    {   printf("LED ON!\n");  
+       gpio_set_level(GPIO_LED,1);//开灯
+       vTaskDelay(1000/portTICK_PERIOD_MS);//延时一秒
+       printf("LED OFF!\n"); 
+       gpio_set_level(GPIO_LED,0);//关灯
+       vTaskDelay(1000/portTICK_PERIOD_MS);//延时一秒
+    }
+ return 0; 
+}
+

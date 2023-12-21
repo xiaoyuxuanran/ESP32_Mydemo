@@ -1,0 +1,3 @@
+idf_component_register(SRCS "uart.c"
+                    INCLUDE_DIRS "include" "../LED/include"
+                    REQUIRES driver)
